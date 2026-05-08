@@ -59,16 +59,109 @@
     reviewed: new Set(),
     wrongAll: [],
     totalAnswered: 0,
+    pickerOpen: false,
   };
 
-  function renderProgress() {
-    const total = QUESTIONS.length;
-    const upToBatchEnd = Math.min((state.batchIndex + 1) * BATCH_SIZE, total);
-    const pct = (upToBatchEnd / total) * 100;
-    progressFill.style.width = pct + "%";
-    const totalBatches = state.batches.length;
-    progressLabel.textContent = `Δεκάδα ${state.batchIndex + 1} / ${totalBatches}`;
+  function batchStatus(idx) {
+    if (state.reviewed.has(idx)) return "reviewed";
+    const batch = state.batches[idx];
+    const answered = batch.filter((q) => state.selections.has(q.id)).length;
+    if (answered === 0) return "empty";
+    if (answered === batch.length) return "complete";
+    return "partial";
   }
+
+  function allBatchesReviewed() {
+    return state.reviewed.size === state.batches.length;
+  }
+
+  function goToBatch(idx) {
+    if (idx < 0 || idx >= state.batches.length) return;
+    state.batchIndex = idx;
+    state.pickerOpen = false;
+    renderBatch();
+  }
+
+  function renderProgress() {
+    const totalBatches = state.batches.length;
+    const reviewedCount = state.reviewed.size;
+    const pct = (reviewedCount / totalBatches) * 100;
+    progressFill.style.width = pct + "%";
+    progressLabel.textContent = `Δεκάδα ${state.batchIndex + 1} / ${totalBatches}`;
+    progressLabel.setAttribute("aria-expanded", state.pickerOpen ? "true" : "false");
+  }
+
+  function renderBatchPicker() {
+    const existing = document.getElementById("batch-picker");
+    if (existing) existing.remove();
+    if (!state.pickerOpen) return;
+
+    const picker = document.createElement("div");
+    picker.id = "batch-picker";
+    picker.className = "batch-picker";
+
+    const grid = document.createElement("div");
+    grid.className = "batch-picker-grid";
+
+    state.batches.forEach((_, idx) => {
+      const status = batchStatus(idx);
+      const item = document.createElement("button");
+      item.type = "button";
+      item.className = `batch-picker-item is-${status}`;
+      if (idx === state.batchIndex) item.classList.add("is-current");
+      item.textContent = String(idx + 1);
+      const labels = {
+        empty: "άθικτη",
+        partial: "σε εξέλιξη",
+        complete: "απαντημένη",
+        reviewed: "ελεγμένη",
+      };
+      item.title = `Δεκάδα ${idx + 1} — ${labels[status]}`;
+      item.setAttribute("aria-label", item.title);
+      item.addEventListener("click", () => goToBatch(idx));
+      grid.appendChild(item);
+    });
+
+    picker.appendChild(grid);
+
+    const legend = document.createElement("div");
+    legend.className = "batch-picker-legend";
+    legend.innerHTML =
+      '<span><span class="dot is-empty"></span>άθικτη</span>' +
+      '<span><span class="dot is-partial"></span>σε εξέλιξη</span>' +
+      '<span><span class="dot is-complete"></span>απαντημένη</span>' +
+      '<span><span class="dot is-reviewed"></span>ελεγμένη</span>';
+    picker.appendChild(legend);
+
+    progressLabel.parentElement.appendChild(picker);
+  }
+
+  progressLabel.setAttribute("role", "button");
+  progressLabel.setAttribute("tabindex", "0");
+  progressLabel.setAttribute("aria-haspopup", "true");
+  progressLabel.classList.add("progress-label-clickable");
+  progressLabel.addEventListener("click", (e) => {
+    e.stopPropagation();
+    state.pickerOpen = !state.pickerOpen;
+    renderBatchPicker();
+    renderProgress();
+  });
+  progressLabel.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      state.pickerOpen = !state.pickerOpen;
+      renderBatchPicker();
+      renderProgress();
+    }
+  });
+  document.addEventListener("click", (e) => {
+    if (!state.pickerOpen) return;
+    const picker = document.getElementById("batch-picker");
+    if (picker && (picker.contains(e.target) || progressLabel.contains(e.target))) return;
+    state.pickerOpen = false;
+    renderBatchPicker();
+    renderProgress();
+  });
 
   function makeOptionButton(text, idx) {
     const li = document.createElement("li");
@@ -146,12 +239,11 @@
 
     if (reviewed) {
       renderReviewSummary(batch);
-      renderAdvanceFooter();
-    } else {
-      renderCheckFooter();
     }
+    renderFooter();
 
     renderProgress();
+    renderBatchPicker();
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
@@ -172,15 +264,76 @@
     return s.replace(/(["\\])/g, "\\$1");
   }
 
-  function renderCheckFooter() {
+  function renderFooter() {
     const footer = document.createElement("div");
     footer.className = "batch-footer";
-    const btn = document.createElement("button");
-    btn.className = "btn";
-    btn.id = "check-btn";
-    btn.textContent = "Έλεγχος απαντήσεων";
-    btn.addEventListener("click", checkBatch);
-    footer.appendChild(btn);
+
+    const left = document.createElement("div");
+    left.className = "batch-footer-slot left";
+    const center = document.createElement("div");
+    center.className = "batch-footer-slot center";
+    const right = document.createElement("div");
+    right.className = "batch-footer-slot right";
+
+    const isFirst = state.batchIndex === 0;
+    const isLast = state.batchIndex >= state.batches.length - 1;
+    const reviewed = state.reviewed.has(state.batchIndex);
+
+    if (!isFirst) {
+      const prev = document.createElement("button");
+      prev.type = "button";
+      prev.className = "btn secondary nav";
+      prev.textContent = "← Προηγούμενη";
+      prev.addEventListener("click", () => goToBatch(state.batchIndex - 1));
+      left.appendChild(prev);
+    }
+
+    if (reviewed) {
+      if (allBatchesReviewed()) {
+        const finalBtn = document.createElement("button");
+        finalBtn.type = "button";
+        finalBtn.className = "btn";
+        finalBtn.textContent = "Δες τα τελικά αποτελέσματα";
+        finalBtn.addEventListener("click", renderFinal);
+        center.appendChild(finalBtn);
+        if (!isLast) {
+          const next = document.createElement("button");
+          next.type = "button";
+          next.className = "btn secondary nav";
+          next.textContent = "Επόμενη →";
+          next.addEventListener("click", () => goToBatch(state.batchIndex + 1));
+          right.appendChild(next);
+        }
+      } else if (!isLast) {
+        const next = document.createElement("button");
+        next.type = "button";
+        next.className = "btn";
+        next.textContent = "Επόμενη δεκάδα →";
+        next.addEventListener("click", () => goToBatch(state.batchIndex + 1));
+        right.appendChild(next);
+      }
+    } else {
+      const checkBtn = document.createElement("button");
+      checkBtn.type = "button";
+      checkBtn.className = "btn";
+      checkBtn.id = "check-btn";
+      checkBtn.textContent = "Έλεγχος απαντήσεων";
+      checkBtn.addEventListener("click", checkBatch);
+      center.appendChild(checkBtn);
+
+      if (!isLast) {
+        const next = document.createElement("button");
+        next.type = "button";
+        next.className = "btn secondary nav";
+        next.textContent = "Επόμενη →";
+        next.addEventListener("click", () => goToBatch(state.batchIndex + 1));
+        right.appendChild(next);
+      }
+    }
+
+    footer.appendChild(left);
+    footer.appendChild(center);
+    footer.appendChild(right);
     app.appendChild(footer);
     updateFooter();
   }
@@ -254,25 +407,6 @@
     app.appendChild(card);
   }
 
-  function renderAdvanceFooter() {
-    const footer = document.createElement("div");
-    footer.className = "batch-footer";
-    const isLast = state.batchIndex >= state.batches.length - 1;
-
-    const btn = document.createElement("button");
-    btn.className = "btn";
-    btn.textContent = isLast ? "Δες τα τελικά αποτελέσματα" : "Επόμενη δεκάδα →";
-    btn.addEventListener("click", () => {
-      if (isLast) renderFinal();
-      else {
-        state.batchIndex += 1;
-        renderBatch();
-      }
-    });
-    footer.appendChild(btn);
-    app.appendChild(footer);
-  }
-
   function renderFinal() {
     app.innerHTML = "";
     const total = state.totalAnswered;
@@ -310,7 +444,8 @@
 
       const ul = document.createElement("ul");
       ul.className = "difficult-list";
-      state.wrongAll.forEach((q) => {
+      const sortedWrong = state.wrongAll.slice().sort((a, b) => a.id - b.id);
+      sortedWrong.forEach((q) => {
         const li = document.createElement("li");
         li.innerHTML =
           `<span class="word">${escapeHtml(q.word)}</span>` +
@@ -334,6 +469,7 @@
       state.reviewed = new Set();
       state.wrongAll = [];
       state.totalAnswered = 0;
+      state.pickerOpen = false;
       renderBatch();
     });
     footer.appendChild(restart);
