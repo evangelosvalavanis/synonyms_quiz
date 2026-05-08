@@ -5,8 +5,61 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Κουίζ Συνωνύμων — Προετοιμασία Α' Γυμνασίου</title>
 <link rel="stylesheet" href="style.css">
+<style>
+  /* Πύλη προστασίας — εμφανίζεται έως ότου εισαχθεί ο σωστός κωδικός */
+  html.locked body > *:not(#access-gate) { display: none !important; }
+  #access-gate {
+    position: fixed; inset: 0; z-index: 99999;
+    display: flex; align-items: center; justify-content: center;
+    background: #f5f7fb; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    padding: 1rem;
+  }
+  #access-gate.hidden { display: none; }
+  #access-gate .gate-card {
+    background: #fff; border-radius: 14px; box-shadow: 0 10px 30px rgba(0,0,0,.08);
+    padding: 2rem 1.75rem; max-width: 420px; width: 100%; text-align: center;
+  }
+  #access-gate h1 { margin: 0 0 .25rem; font-size: 1.4rem; color: #1f2937; }
+  #access-gate p.subtitle { margin: 0 0 1.25rem; color: #6b7280; font-size: .95rem; }
+  #access-gate label { display: block; text-align: left; font-size: .9rem; color: #374151; margin-bottom: .35rem; }
+  #access-gate input[type="password"] {
+    width: 100%; padding: .65rem .8rem; border: 1px solid #d1d5db; border-radius: 8px;
+    font-size: 1rem; outline: none; box-sizing: border-box;
+  }
+  #access-gate input[type="password"]:focus { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,.15); }
+  #access-gate button {
+    margin-top: .9rem; width: 100%; padding: .7rem 1rem; border: 0; border-radius: 8px;
+    background: #2563eb; color: #fff; font-size: 1rem; font-weight: 600; cursor: pointer;
+  }
+  #access-gate button:hover { background: #1d4ed8; }
+  #access-gate .error { color: #dc2626; font-size: .9rem; margin-top: .6rem; min-height: 1.2em; }
+</style>
+<script>
+  // === Κωδικός πρόσβασης — αλλάξτε εδώ ===
+  const ACCESS_PASSWORD = "evalavanis-students";
+  // =======================================
+
+  // Κλείδωμα του site πριν φορτώσει το υπόλοιπο περιεχόμενο για αποφυγή flash.
+  (function () {
+    try {
+      if (sessionStorage.getItem("site-unlocked") === "1") return;
+    } catch (e) {}
+    document.documentElement.classList.add("locked");
+  })();
+</script>
 </head>
 <body>
+<div id="access-gate" class="hidden">
+  <form class="gate-card" id="access-form" autocomplete="off">
+    <h1>Κουίζ Συνωνύμων</h1>
+    <p class="subtitle">Πρόσβαση μόνο για μαθητές του κ. Βαλαβάνη</p>
+    <label for="access-password">Κωδικός πρόσβασης:</label>
+    <input type="password" id="access-password" name="access-password" autocomplete="off" autofocus required>
+    <button type="submit">Είσοδος</button>
+    <div class="error" id="access-error" aria-live="polite"></div>
+  </form>
+</div>
+
 <header class="topbar">
   <h1>Κουίζ Συνωνύμων</h1>
   <p class="subtitle">Επιλέξτε τη λέξη που μπορεί να αντικαταστήσει τη <b>έντονη</b> λέξη χωρίς να αλλάξει το νόημα.</p>
@@ -28,7 +81,47 @@
   </article>
 </template>
 
-<script src="script.js"></script>
+<script>
+  (function () {
+    const gate = document.getElementById("access-gate");
+    const form = document.getElementById("access-form");
+    const input = document.getElementById("access-password");
+    const error = document.getElementById("access-error");
+    let unlocked = false;
+    try { unlocked = sessionStorage.getItem("site-unlocked") === "1"; } catch (e) {}
+
+    if (unlocked) {
+      document.documentElement.classList.remove("locked");
+      gate.classList.add("hidden");
+      loadApp();
+      return;
+    }
+
+    document.documentElement.classList.add("locked");
+    gate.classList.remove("hidden");
+    setTimeout(() => input.focus(), 0);
+
+    form.addEventListener("submit", (e) => {
+      e.preventDefault();
+      if (input.value === ACCESS_PASSWORD) {
+        try { sessionStorage.setItem("site-unlocked", "1"); } catch (e) {}
+        document.documentElement.classList.remove("locked");
+        gate.classList.add("hidden");
+        loadApp();
+      } else {
+        error.textContent = "Λάθος κωδικός. Προσπαθήστε ξανά.";
+        input.value = "";
+        input.focus();
+      }
+    });
+
+    function loadApp() {
+      const s = document.createElement("script");
+      s.src = "script.js";
+      document.body.appendChild(s);
+    }
+  })();
+</script>
 
 <footer class="site-footer">
   <a href="https://evalavanis.gr" target="_blank" rel="noopener">evalavanis.gr</a>
