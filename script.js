@@ -5,7 +5,7 @@
   const app = document.getElementById("app");
   const tpl = document.getElementById("tpl-question");
   const progressFill = document.getElementById("progress-fill");
-  const progressLabel = document.getElementById("progress-label");
+  const pageStrip = document.getElementById("page-strip");
 
   async function loadQuestions() {
     const res = await fetch("questions.json", { cache: "no-cache" });
@@ -59,7 +59,6 @@
     reviewed: new Set(),
     wrongAll: [],
     totalAnswered: 0,
-    pickerOpen: false,
   };
 
   function batchStatus(idx) {
@@ -78,7 +77,6 @@
   function goToBatch(idx) {
     if (idx < 0 || idx >= state.batches.length) return;
     state.batchIndex = idx;
-    state.pickerOpen = false;
     renderBatch();
   }
 
@@ -87,81 +85,42 @@
     const reviewedCount = state.reviewed.size;
     const pct = (reviewedCount / totalBatches) * 100;
     progressFill.style.width = pct + "%";
-    progressLabel.textContent = `Δεκάδα ${state.batchIndex + 1} / ${totalBatches}`;
-    progressLabel.setAttribute("aria-expanded", state.pickerOpen ? "true" : "false");
   }
 
-  function renderBatchPicker() {
-    const existing = document.getElementById("batch-picker");
-    if (existing) existing.remove();
-    if (!state.pickerOpen) return;
-
-    const picker = document.createElement("div");
-    picker.id = "batch-picker";
-    picker.className = "batch-picker";
-
-    const grid = document.createElement("div");
-    grid.className = "batch-picker-grid";
-
+  function buildPageStrip() {
+    pageStrip.innerHTML = "";
     state.batches.forEach((_, idx) => {
-      const status = batchStatus(idx);
       const item = document.createElement("button");
       item.type = "button";
-      item.className = `batch-picker-item is-${status}`;
-      if (idx === state.batchIndex) item.classList.add("is-current");
+      item.className = "page-strip-item";
       item.textContent = String(idx + 1);
-      const labels = {
-        empty: "άθικτη",
-        partial: "σε εξέλιξη",
-        complete: "απαντημένη",
-        reviewed: "ελεγμένη",
-      };
-      item.title = `Δεκάδα ${idx + 1} — ${labels[status]}`;
-      item.setAttribute("aria-label", item.title);
+      item.dataset.idx = String(idx);
       item.addEventListener("click", () => goToBatch(idx));
-      grid.appendChild(item);
+      pageStrip.appendChild(item);
     });
-
-    picker.appendChild(grid);
-
-    const legend = document.createElement("div");
-    legend.className = "batch-picker-legend";
-    legend.innerHTML =
-      '<span><span class="dot is-empty"></span>άθικτη</span>' +
-      '<span><span class="dot is-partial"></span>σε εξέλιξη</span>' +
-      '<span><span class="dot is-complete"></span>απαντημένη</span>' +
-      '<span><span class="dot is-reviewed"></span>ελεγμένη</span>';
-    picker.appendChild(legend);
-
-    progressLabel.parentElement.appendChild(picker);
   }
 
-  progressLabel.setAttribute("role", "button");
-  progressLabel.setAttribute("tabindex", "0");
-  progressLabel.setAttribute("aria-haspopup", "true");
-  progressLabel.classList.add("progress-label-clickable");
-  progressLabel.addEventListener("click", (e) => {
-    e.stopPropagation();
-    state.pickerOpen = !state.pickerOpen;
-    renderBatchPicker();
-    renderProgress();
-  });
-  progressLabel.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" || e.key === " ") {
-      e.preventDefault();
-      state.pickerOpen = !state.pickerOpen;
-      renderBatchPicker();
-      renderProgress();
-    }
-  });
-  document.addEventListener("click", (e) => {
-    if (!state.pickerOpen) return;
-    const picker = document.getElementById("batch-picker");
-    if (picker && (picker.contains(e.target) || progressLabel.contains(e.target))) return;
-    state.pickerOpen = false;
-    renderBatchPicker();
-    renderProgress();
-  });
+  function updatePageStrip() {
+    const labels = {
+      empty: "κενή",
+      partial: "σε διαδικασία συμπλήρωσης",
+      complete: "συμπληρώθηκε",
+      reviewed: "ελέγχθηκε",
+    };
+    const items = pageStrip.querySelectorAll(".page-strip-item");
+    items.forEach((item, idx) => {
+      const status = batchStatus(idx);
+      const isCurrent = idx === state.batchIndex;
+      item.className = `page-strip-item is-${status}${isCurrent ? " is-current" : ""}`;
+      const title = `Σελίδα ${idx + 1} — ${labels[status]}`;
+      item.title = title;
+      item.setAttribute("aria-label", title);
+      if (isCurrent) item.setAttribute("aria-current", "true");
+      else item.removeAttribute("aria-current");
+    });
+    const current = pageStrip.querySelector(".page-strip-item.is-current");
+    if (current) current.scrollIntoView({ inline: "center", block: "nearest", behavior: "smooth" });
+  }
 
   function makeOptionButton(text, idx) {
     const li = document.createElement("li");
@@ -243,7 +202,7 @@
     renderFooter();
 
     renderProgress();
-    renderBatchPicker();
+    updatePageStrip();
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
@@ -308,7 +267,7 @@
         const next = document.createElement("button");
         next.type = "button";
         next.className = "btn";
-        next.textContent = "Επόμενη δεκάδα →";
+        next.textContent = "Επόμενη σελίδα →";
         next.addEventListener("click", () => goToBatch(state.batchIndex + 1));
         right.appendChild(next);
       }
@@ -369,7 +328,7 @@
 
     const right = batch.length - wrong.length;
     const head = document.createElement("h2");
-    head.textContent = "Αποτέλεσμα δεκάδας";
+    head.textContent = "Αποτέλεσμα σελίδας";
     card.appendChild(head);
 
     const score = document.createElement("p");
@@ -380,7 +339,7 @@
     if (wrong.length === 0) {
       const ok = document.createElement("div");
       ok.className = "all-good";
-      ok.textContent = "Τέλεια! Δεν σε δυσκόλεψε καμία λέξη σε αυτή τη δεκάδα.";
+      ok.textContent = "Τέλεια! Δεν σε δυσκόλεψε καμία λέξη σε αυτή τη σελίδα.";
       card.appendChild(ok);
     } else {
       const title = document.createElement("p");
@@ -469,7 +428,7 @@
       state.reviewed = new Set();
       state.wrongAll = [];
       state.totalAnswered = 0;
-      state.pickerOpen = false;
+      buildPageStrip();
       renderBatch();
     });
     footer.appendChild(restart);
@@ -478,9 +437,9 @@
     app.appendChild(card);
 
     progressFill.style.width = "100%";
-    progressLabel.textContent = "Ολοκληρώθηκε";
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
+  buildPageStrip();
   renderBatch();
 })();
